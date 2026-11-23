@@ -31,6 +31,7 @@ final class Ui {
     static final int ACCENT = 0xFF3D7CFF;
     static final int ACCENT_DITHER = 0xFF8B5CF6;
     static final int ACCENT_UPMIX = 0xFF10B981;
+    static final int ACCENT_EQ = 0xFFF97316;
     static final int OK = 0xFF34D399;
     static final int WARN = 0xFFF59E0B;
     static final int IDLE = 0xFF6B7280;

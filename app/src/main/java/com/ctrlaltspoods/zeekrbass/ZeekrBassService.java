@@ -34,7 +34,8 @@ import android.util.Log;
  * Foreground service that owns the audio engine, the capture permission and the floating panel.
  * It keeps running while a stream is active or the panel is on screen, and stops itself otherwise.
  */
-public class ZeekrBassService extends Service implements StreamEngine.Callback, OverlayPanel.Actions {
+public class ZeekrBassService extends Service
+        implements StreamEngine.Callback, OverlayPanel.Actions, BassEq.Listener {
     static final String ACTION_SET_MODE = "com.ctrlaltspoods.zeekrbass.SET_MODE";
     static final String ACTION_SET_DITHER = "com.ctrlaltspoods.zeekrbass.SET_DITHER";
     static final String ACTION_SHOW_PANEL = "com.ctrlaltspoods.zeekrbass.SHOW_PANEL";
@@ -44,6 +45,7 @@ public class ZeekrBassService extends Service implements StreamEngine.Callback, 
     static final String ACTION_QUIT = "com.ctrlaltspoods.zeekrbass.QUIT";
     static final String ACTION_UPMIX_LAYOUT_CHANGED = "com.ctrlaltspoods.zeekrbass.UPMIX_LAYOUT";
     static final String ACTION_PROJECTION_RESULT = "com.ctrlaltspoods.zeekrbass.PROJECTION_RESULT";
+    static final String ACTION_EQ_SYNC = "com.ctrlaltspoods.zeekrbass.EQ_SYNC";
     static final String EXTRA_MODE = "mode";
     static final String EXTRA_ENABLED = "enabled";
     static final String EXTRA_RESULT_CODE = "result_code";
@@ -59,6 +61,8 @@ public class ZeekrBassService extends Service implements StreamEngine.Callback, 
     private UpmixConfig upmix;
     private StreamEngine engine;
     private OverlayPanel panel;
+    private EqConfig eqConfig;
+    private BassEq eq;
     private MediaProjection projection;
     private Mode currentMode = Mode.OFF;   // what the user asked for
     private boolean waitingForProjection;
@@ -89,6 +93,8 @@ public class ZeekrBassService extends Service implements StreamEngine.Callback, 
         engine = new StreamEngine(this, upmix);
         engine.setDither(prefs.dither());
         panel = new OverlayPanel(this, prefs, upmix, this);
+        eqConfig = EqConfig.get(this);
+        eq = new BassEq(this, eqConfig, this);
         StatusBus.dither = prefs.dither();
         StatusBus.serviceRunning = true;
         createChannel();
@@ -125,14 +131,22 @@ public class ZeekrBassService extends Service implements StreamEngine.Callback, 
             case ACTION_PROJECTION_RESULT:
                 onProjectionResult(intent);
                 break;
+            case ACTION_EQ_SYNC:
+                eq.sync();
+                break;
             case ACTION_QUIT:
                 applyMode(Mode.OFF);
                 setPanelVisible(false);
+                eqConfig.enabled = false;
+                eqConfig.save();
+                eq.sync();
                 break;
             case ACTION_RESTORE:
             default:
                 applyMode(prefs.mode());
                 if (prefs.overlayVisible()) setPanelVisible(true);
+                eq.sync();
+                if (prefs.rootUpmix()) restartRootHelper();
                 break;
         }
         stopIfIdle();
@@ -141,6 +155,7 @@ public class ZeekrBassService extends Service implements StreamEngine.Callback, 
 
     @Override
     public void onDestroy() {
+        eq.stop();
         engine.release();
         releaseProjection();
         panel.hide();
@@ -176,6 +191,42 @@ public class ZeekrBassService extends Service implements StreamEngine.Callback, 
         upmix.algorithm = algorithm; // applied live by the DSP
         upmix.save(this);
         refreshUi();
+    }
+
+    @Override
+    public void onEqToggled() {
+        eqConfig.enabled = !eqConfig.enabled;
+        eqConfig.save();
+        eq.sync();
+        refreshUi();
+        stopIfIdle();
+    }
+
+    @Override
+    public void onEqStatus(String status, boolean healthy) {
+        StatusBus.eqStatus = status;
+        StatusBus.eqHealthy = healthy;
+        refreshUi();
+    }
+
+    private void restartRootHelper() {
+        final Context app = getApplicationContext();
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                java.util.Properties st = Root.readStatus(app);
+                long updated = 0;
+                try {
+                    updated = Long.parseLong(st.getProperty("updated", "0"));
+                } catch (NumberFormatException ignored) {
+                }
+                if ("running".equals(st.getProperty("state"))
+                        && System.currentTimeMillis() - updated < 5000) {
+                    return; // already running, don't interrupt it
+                }
+                Log.i(TAG, Root.startHelper(app));
+            }
+        }, "zeekrbass-root-start").start();
     }
 
     @Override
@@ -384,7 +435,8 @@ public class ZeekrBassService extends Service implements StreamEngine.Callback, 
     }
 
     private void stopIfIdle() {
-        if (currentMode == Mode.OFF && engine.mode() == Mode.OFF && !panel.isShown()) {
+        if (currentMode == Mode.OFF && engine.mode() == Mode.OFF && !panel.isShown()
+                && !eqConfig.enabled) {
             inForeground = false;
             stopForeground(STOP_FOREGROUND_REMOVE);
             stopSelf();
@@ -454,12 +506,13 @@ public class ZeekrBassService extends Service implements StreamEngine.Callback, 
                 title = "Upmix " + upmix.layoutLabel() + " · " + upmix.algorithm.label;
                 break;
             case OFF:
-                title = "ZeekrBass off";
+                title = eqConfig != null && eqConfig.enabled ? "Bass EQ on" : "ZeekrBass off";
                 break;
             default:
                 title = "Silent " + currentMode.label + " stream active";
                 break;
         }
+        if (eqConfig != null && eqConfig.enabled && currentMode != Mode.OFF) title += " + Bass EQ";
         Notification.Builder b = new Notification.Builder(this, CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle(title)

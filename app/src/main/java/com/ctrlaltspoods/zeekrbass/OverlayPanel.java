@@ -33,7 +33,7 @@ import java.util.Map;
 /**
  * Floating, draggable control panel drawn over other apps.
  *
- * [⠿] ● [5.1] [7.1] [Upmix] [Off] [Dither]
+ * [⠿] ● [5.1] [7.1] [Upmix] [Off] [Dither] [Bass EQ]
  *         [Cinema] [Music] [Manual] [Layout 5.1]     ← second row, only in Upmix mode
  *
  * Drag the ⠿ handle to move it; tap the handle to collapse it down to "⠿ ● 5.1".
@@ -47,6 +47,8 @@ final class OverlayPanel {
         void onAlgorithmSelected(UpmixAlgorithm algorithm);
 
         void onLayoutToggled();
+
+        void onEqToggled();
     }
 
     private static final String TAG = "ZeekrBass";
@@ -63,6 +65,7 @@ final class OverlayPanel {
     private LinearLayout controls;
     private TextView compactLabel;
     private TextView ditherButton;
+    private TextView eqButton;
     private TextView layoutButton;
     private LinearLayout upmixRow;
     private View dot;
@@ -132,16 +135,18 @@ final class OverlayPanel {
             Ui.stylePill(e.getValue(), e.getKey() == mode, Ui.ACCENT);
         }
         Ui.stylePill(ditherButton, StatusBus.dither, Ui.ACCENT_DITHER);
+        Ui.stylePill(eqButton, EqConfig.get(ctx).enabled, Ui.ACCENT_EQ);
         for (Map.Entry<UpmixAlgorithm, TextView> e : algoButtons.entrySet()) {
             Ui.stylePill(e.getValue(), e.getKey() == upmix.algorithm, Ui.ACCENT_UPMIX);
         }
         layoutButton.setText("Layout " + upmix.layoutLabel());
         Ui.stylePill(layoutButton, false, Ui.ACCENT_UPMIX);
-        upmixRow.setVisibility(mode == Mode.UPMIX ? View.VISIBLE : View.GONE);
+        upmixRow.setVisibility(mode == Mode.UPMIX || prefs.rootUpmix() ? View.VISIBLE : View.GONE);
         dot.setBackground(Ui.dot(Ui.statusColor(mode, StatusBus.healthy)));
         compactLabel.setText(mode == Mode.OFF ? "Off"
                 : mode == Mode.UPMIX ? upmix.algorithm.label + " " + upmix.layoutLabel() : mode.label);
         if (shown) {
+            // Size can change (rows appear/disappear): keep the panel on screen.
             root.post(new Runnable() {
                 @Override
                 public void run() {
@@ -210,6 +215,14 @@ final class OverlayPanel {
         LinearLayout.LayoutParams ditherLp = buttonLp();
         ditherLp.setMargins(Ui.dp(ctx, 12), 0, Ui.dp(ctx, 4), 0);
         modeRow.addView(ditherButton, ditherLp);
+        eqButton = Ui.pill(ctx, "Bass EQ", 14);
+        eqButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                actions.onEqToggled();
+            }
+        });
+        modeRow.addView(eqButton, buttonLp());
         controls.addView(modeRow);
 
         upmixRow = new LinearLayout(ctx);

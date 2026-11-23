@@ -13,6 +13,8 @@
     <!-- Needed by Android for any audio capture. Upmix only captures other apps' playback;
          it never opens the microphone. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Bass EQ: attach Android's built-in effects to the output mix / music apps. -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />

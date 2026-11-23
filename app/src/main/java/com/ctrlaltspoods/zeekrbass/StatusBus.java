@@ -39,6 +39,8 @@ final class StatusBus {
     /** Upmix meters, updated a few times a second by the audio thread (not via publish()). */
     static volatile float inputPeakDb = -120f;
     static volatile int bufferedMs;
+    static volatile String eqStatus = "Bass EQ off";
+    static volatile boolean eqHealthy = true;
 
     private StatusBus() {
     }

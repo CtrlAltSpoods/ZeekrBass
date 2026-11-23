@@ -37,11 +37,23 @@ import android.widget.Toast;
 
 import java.util.EnumMap;
 import java.util.Map;
+import java.util.Properties;
 
 /** Settings / control screen. The common controls are also on the floating panel. */
 public class MainActivity extends Activity implements StatusBus.Listener {
     private Prefs prefs;
     private UpmixConfig upmix;
+    private EqConfig eq;
+    private Switch eqSwitch;
+    private Switch eqGlobalSwitch;
+    private Switch eqAppsSwitch;
+    private Switch eqLoudnessSwitch;
+    private TextView eqStatusText;
+    private TextView rootOutput;
+    private TextView rootStatusText;
+    private TextView rootUpmixButton;
+    private boolean rootBusy;
+    private int meterTicks;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Map<Mode, TextView> modeButtons = new EnumMap<>(Mode.class);
     private final Map<UpmixAlgorithm, TextView> algoButtons = new EnumMap<>(UpmixAlgorithm.class);
@@ -71,6 +83,7 @@ public class MainActivity extends Activity implements StatusBus.Listener {
         super.onCreate(savedInstanceState);
         prefs = new Prefs(this);
         upmix = UpmixConfig.get(this);
+        eq = EqConfig.get(this);
         setContentView(buildUi());
 
         if (Build.VERSION.SDK_INT >= 33
@@ -200,6 +213,33 @@ public class MainActivity extends Activity implements StatusBus.Listener {
         col.addView(text("The front speakers are never high-passed. They stay full range, so the car's "
                 + "own tuning is untouched.", 14, Ui.TEXT_DIM, false));
 
+        // --- bass EQ
+        col.addView(section("Bass EQ"));
+        col.addView(text("Boosts bass with Android's own effects, attached the way system EQ apps do it. "
+                + "No capture and no delay. It can run together with Silent 5.1.", 14, Ui.TEXT_DIM, false));
+        eqSwitch = toggle("Bass EQ on");
+        col.addView(eqSwitch);
+        eqGlobalSwitch = toggle("Global: whole car output mix (\"legacy mode\"; depends on the car)");
+        col.addView(eqGlobalSwitch);
+        eqAppsSwitch = toggle("Music apps that announce their audio (Spotify, YouTube Music, Plexamp…)");
+        col.addView(eqAppsSwitch);
+        col.addView(rangeSlider("Bass boost", 0, EqConfig.MAX_BOOST_DB, eq.boostDb, new Level() {
+            @Override
+            public void set(int db) {
+                eq.boostDb = db;
+            }
+        }, new Runnable() {
+            @Override
+            public void run() {
+                saveEq();
+            }
+        }));
+        eqLoudnessSwitch = toggle("Loudness: add up to +" + EqConfig.LOUDNESS_MAX_EXTRA_DB
+                + " dB more bass as the volume goes down");
+        col.addView(eqLoudnessSwitch);
+        eqStatusText = text("", 14, Ui.TEXT, false);
+        col.addView(eqStatusText);
+
         // --- silent stream / general
         col.addView(section("Silent stream"));
         ditherSwitch = toggle("Dither: send inaudible −96 dBFS noise instead of pure digital silence");
@@ -244,6 +284,57 @@ public class MainActivity extends Activity implements StatusBus.Listener {
         col.addView(text("Optional: approve audio capture automatically, so Upmix can start without a "
                 + "prompt and come back after a restart:", 14, Ui.TEXT_DIM, false));
         col.addView(code("adb shell appops set " + getPackageName() + " PROJECT_MEDIA allow"));
+
+        // --- root
+        col.addView(section("Root (experimental)"));
+        col.addView(text("Uses root without changing any system files. Root upmix moves media audio "
+                + "from other apps into ZeekrBass and plays it back upmixed on ALL speakers, fronts "
+                + "included, with no doubling. Navigation, calls and alerts are never touched. "
+                + "If anything goes wrong, Android restores normal audio by itself.",
+                14, Ui.TEXT_DIM, false));
+        LinearLayout rootRow1 = hRow();
+        pillIn(rootRow1, "Check root", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                runRoot("Checking root…", new RootTask() {
+                    @Override
+                    public String run() {
+                        return Root.check(MainActivity.this);
+                    }
+                });
+            }
+        });
+        pillIn(rootRow1, "Grant permissions", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                runRoot("Granting…", new RootTask() {
+                    @Override
+                    public String run() {
+                        return Root.grantPermissions(MainActivity.this);
+                    }
+                });
+            }
+        });
+        col.addView(rootRow1);
+        LinearLayout rootRow2 = hRow();
+        rootRow2.setPadding(0, Ui.dp(this, 12), 0, 0);
+        rootUpmixButton = pillIn(rootRow2, "Start root upmix", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                toggleRootUpmix();
+            }
+        });
+        col.addView(rootRow2);
+        rootStatusText = text("", 14, Ui.TEXT, false);
+        col.addView(rootStatusText);
+        rootOutput = text("", 13, Ui.TEXT, false);
+        rootOutput.setTypeface(Typeface.MONOSPACE);
+        rootOutput.setTextIsSelectable(true);
+        col.addView(rootOutput);
+        col.addView(text("If su doesn't work from the app but ADB root does, start it from a computer "
+                + "(set Layout/Processing above first, then tap Start once so the settings file exists):",
+                14, Ui.TEXT_DIM, false));
+        col.addView(code(Root.adbCommand(this)));
 
         // --- effects scan
         col.addView(section("Audio effects on this car"));
@@ -292,6 +383,38 @@ public class MainActivity extends Activity implements StatusBus.Listener {
 
     private interface Level {
         void set(int db);
+    }
+
+    private View rangeSlider(final String name, final int min, final int max, int value,
+                             final Level level, final Runnable onRelease) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(0, Ui.dp(this, 10), 0, 0);
+        final TextView title = text(name + ": +" + value + " dB", 16, Ui.TEXT, false);
+        box.addView(title);
+        SeekBar bar = new SeekBar(this);
+        bar.setMax(max - min);
+        bar.setProgress(Math.max(0, value - min));
+        bar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar s, int progress, boolean fromUser) {
+                int v = progress + min;
+                level.set(v);
+                title.setText(name + ": +" + v + " dB");
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar s) {
+            }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar s) {
+                onRelease.run();
+            }
+        });
+        box.addView(bar, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
+                Ui.dp(this, 48)));
+        return box;
     }
 
     private View slider(final String name, final int maxDb, int value, final Level level) {
@@ -349,6 +472,38 @@ public class MainActivity extends Activity implements StatusBus.Listener {
         panelButton.setText(panelShown ? "Hide floating panel" : "Show floating panel");
         Ui.stylePill(panelButton, panelShown, Ui.ACCENT);
 
+        bindSwitch(eqSwitch, eq.enabled, new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton b, boolean on) {
+                eq.enabled = on;
+                saveEq();
+            }
+        });
+        bindSwitch(eqGlobalSwitch, eq.global, new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton b, boolean on) {
+                eq.global = on;
+                saveEq();
+            }
+        });
+        bindSwitch(eqAppsSwitch, eq.perApp, new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton b, boolean on) {
+                eq.perApp = on;
+                saveEq();
+            }
+        });
+        bindSwitch(eqLoudnessSwitch, eq.loudness, new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton b, boolean on) {
+                eq.loudness = on;
+                saveEq();
+            }
+        });
+        eqStatusText.setText(eq.enabled ? StatusBus.eqStatus : "Bass EQ off");
+        eqStatusText.setTextColor(!eq.enabled || StatusBus.eqHealthy ? Ui.TEXT : Ui.WARN);
+        refreshRoot();
+
         bindSwitch(frontsSwitch, upmix.driveFronts, new CompoundButton.OnCheckedChangeListener() {
             @Override
             public void onCheckedChanged(CompoundButton b, boolean on) {
@@ -378,6 +533,11 @@ public class MainActivity extends Activity implements StatusBus.Listener {
     }
 
     private void updateMeter() {
+        if (++meterTicks % 4 == 0) refreshRoot();
+        updateUpmixMeter();
+    }
+
+    private void updateUpmixMeter() {
         boolean upmixing = StatusBus.serviceRunning && StatusBus.mode == Mode.UPMIX
                 && StatusBus.inputPeakDb > -119f;
         if (!upmixing) {
@@ -390,6 +550,104 @@ public class MainActivity extends Activity implements StatusBus.Listener {
         for (int i = 0; i < 30; i++) sb.append(i < bars ? '█' : '·');
         sb.append(String.format(" %5.1f dB   buffer %d ms", db, StatusBus.bufferedMs));
         meterText.setText(sb.toString());
+    }
+
+    // ------------------------------------------------------------------ bass EQ
+
+    private void saveEq() {
+        eq.save();
+        if (eq.enabled || StatusBus.serviceRunning) {
+            ZeekrBassService.send(this, ZeekrBassService.intent(this, ZeekrBassService.ACTION_EQ_SYNC));
+        }
+        refresh();
+    }
+
+    // ------------------------------------------------------------------ root
+
+    private interface RootTask {
+        String run();
+    }
+
+    private void runRoot(String busyText, final RootTask task) {
+        if (rootBusy) return;
+        rootBusy = true;
+        rootOutput.setText(busyText);
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                final String result = task.run();
+                handler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        rootBusy = false;
+                        rootOutput.setText(result);
+                        refresh();
+                    }
+                });
+            }
+        }, "zeekrbass-root-ui").start();
+    }
+
+    private boolean rootHelperRunning() {
+        Properties st = Root.readStatus(this);
+        long updated = 0;
+        try {
+            updated = Long.parseLong(st.getProperty("updated", "0"));
+        } catch (NumberFormatException ignored) {
+        }
+        return "running".equals(st.getProperty("state"))
+                && System.currentTimeMillis() - updated < 5000;
+    }
+
+    private void toggleRootUpmix() {
+        if (prefs.rootUpmix() || rootHelperRunning()) {
+            Root.stopHelper(this);
+            runRoot("Stopping root upmix…", new RootTask() {
+                @Override
+                public String run() {
+                    try {
+                        Thread.sleep(2000);
+                    } catch (InterruptedException ignored) {
+                    }
+                    if (rootHelperRunning()) Root.killHelper();
+                    return "Root upmix stopped. Normal audio restored.";
+                }
+            });
+        } else {
+            runRoot("Starting root upmix…", new RootTask() {
+                @Override
+                public String run() {
+                    return Root.startHelper(MainActivity.this);
+                }
+            });
+        }
+        refresh();
+    }
+
+    private void refreshRoot() {
+        if (rootStatusText == null) return;
+        Properties st = Root.readStatus(this);
+        boolean running = rootHelperRunning();
+        String state = st.getProperty("state", "not started");
+        StringBuilder sb = new StringBuilder("Root upmix: ");
+        if (running) {
+            sb.append(st.getProperty("detail", "running"))
+                    .append(" · input ").append(st.getProperty("inputDb", "?")).append(" dB")
+                    .append(" · buffer ").append(st.getProperty("bufferMs", "?")).append(" ms");
+        } else if ("error".equals(state)) {
+            sb.append("error: ").append(st.getProperty("detail", "?"));
+        } else {
+            sb.append(prefs.rootUpmix() ? "starting…" : "off");
+        }
+        rootStatusText.setText(sb.toString());
+        rootStatusText.setTextColor("error".equals(state) && !running ? Ui.WARN : Ui.TEXT);
+        boolean on = prefs.rootUpmix() || running;
+        rootUpmixButton.setText(on ? "Stop root upmix" : "Start root upmix");
+        Ui.stylePill(rootUpmixButton, on, Ui.ACCENT_UPMIX);
+        if (!rootBusy && ("error".equals(state) || running)) {
+            String log = Root.tailLog(this, 1500);
+            if (!log.isEmpty()) rootOutput.setText("Helper log:\n" + log.trim());
+        }
     }
 
     private void setLayout(boolean is71) {

@@ -66,6 +66,54 @@ other apps are playing, and plays it back spread across the centre, surround and
 - Centre, surround and sub levels are adjustable live (−30 dB/off … +6 dB, sub up to +12 dB).
 - In Upmix mode, the floating panel shows a second row: `[Cinema] [Music] [Manual] [Layout 5.1]`.
 
+### Results so far
+
+The capture-based Upmix didn't work in the car, so v0.3 adds two other routes.
+
+## Bass EQ (v0.3, experimental)
+
+A bass boost made from Android's own audio effects, attached the same way system-wide EQ apps
+do it. No capture and no added delay. It can run together with Silent 5.1.
+
+- **Global (whole car)**: attaches to the global output mix (often called "legacy mode" in EQ apps).
+  Android has deprecated this, so whether it works depends on the car's audio framework. The
+  status line shows whether the car accepted it.
+- **Music apps**: attaches to every music app that announces its audio session (Spotify, YouTube
+  Music, Plexamp and most players do).
+- Curve: bass shelf (full boost below 60 Hz, half up to 150 Hz, flat above), 0 to +12 dB.
+- **Loudness**: adds up to +6 dB more bass as the media volume goes down, aimed at the
+  "no bass at low volume" bug. The status line shows the volume ZeekrBass sees. If it never
+  changes when you turn the volume down, the car handles volume outside Android and Loudness
+  won't follow it.
+- A limiter stops the boost from clipping.
+- There's a **Bass EQ** button on the floating panel.
+
+## Root tools (v0.3, experimental)
+
+For head units with root. **No system files are changed.**
+
+- **Check root**: reports the build type, SELinux mode, and whether `su` works for the app.
+- **Grant permissions**: gives ZeekrBass its permissions (overlay, audio, capture consent, DUMP),
+  so no ADB is needed.
+- **Root upmix**: starts a small helper process as root (`app_process`, in memory only). It:
+  1. opens a 5.1/7.1 output,
+  2. asks Android to route **media** audio from every other app to the helper instead of the
+     speakers (an audio routing policy, the mechanism car audio systems themselves use),
+  3. upmixes it with the Cinema / Music / Manual settings and plays it on **all** speakers,
+     fronts included, so there's no doubling and no echo.
+
+  Only media audio is touched: navigation, calls, chimes and alerts are never routed. If the
+  helper stops or crashes, Android removes its routing automatically and normal audio comes
+  straight back. Its status and log show on the main screen.
+
+  If `su` doesn't work from the app but root works over ADB, the main screen shows the ADB command
+  to start the helper from a computer.
+
+Root is used only for things that disappear on reboot. Installing a native effect library into
+the car's system partition (how ViPER4Android-style mods work) is deliberately **not** done. The
+head unit also runs things like cameras and climate controls, and a bad system change could stop
+it booting.
+
 ### About Dolby and DTS
 
 Real Dolby Pro Logic / Dolby Surround and DTS Neo:X are licensed, closed technology. A sideloaded
@@ -142,7 +190,12 @@ adjust the centre / surround / sub levels to taste.
 | Silent 5.1 | ✅ Changes the sound / bass, but stereo music only plays on the front speakers |
 | Silent 7.1 | Not yet tested |
 | With dither | Not yet tested |
-| Upmix: capture works on the 7X | Not yet tested |
+| Upmix (capture): works on the 7X | ❌ Didn't work |
+| Bass EQ: global (session 0) accepted | Not yet tested |
+| Bass EQ: music apps detected | Not yet tested |
+| Bass EQ: loudness follows volume | Not yet tested |
+| Root: su works for the app | Not yet tested |
+| Root upmix | Not yet tested |
 | Upmix: Cinema / Music / Manual | Not yet tested |
 | Upmix: which music apps can be captured | Not yet tested |
 

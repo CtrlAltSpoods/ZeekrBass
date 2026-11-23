@@ -29,7 +29,10 @@ public class BootReceiver extends BroadcastReceiver {
         }
         Prefs prefs = new Prefs(context);
         if (!prefs.restoreOnBoot()) return;
-        if (prefs.mode() == Mode.OFF && !prefs.overlayVisible()) return;
+        if (prefs.mode() == Mode.OFF && !prefs.overlayVisible() && !EqConfig.get(context).enabled
+                && !prefs.rootUpmix()) {
+            return;
+        }
         try {
             ZeekrBassService.send(context,
                     ZeekrBassService.intent(context, ZeekrBassService.ACTION_RESTORE));
