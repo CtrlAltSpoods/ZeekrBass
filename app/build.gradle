@@ -1,0 +1,49 @@
+// ZeekrBass: unofficial community project, still in testing.
+// NOT affiliated with, endorsed by or connected to Zeekr, Geely or any of their affiliates.
+
+plugins {
+    id 'com.android.application'
+}
+
+// The release signing key is never committed. GitHub Actions decodes it from repo secrets and
+// passes it in via these environment variables. Without them (e.g. a local Android Studio build)
+// the APK is signed with the standard debug key instead.
+def keystorePath = System.getenv('ZEEKRBASS_KEYSTORE')
+
+android {
+    namespace 'com.ctrlaltspoods.zeekrbass'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.ctrlaltspoods.zeekrbass'
+        minSdk 26
+        // Kept at 34 on purpose: Android 15 (target 35) blocks media-playback services
+        // from starting at boot, which would break "restore after restart".
+        targetSdk 34
+        versionCode 1
+        versionName '0.1.0-test'
+    }
+
+    signingConfigs {
+        if (keystorePath) {
+            ci {
+                storeFile file(keystorePath)
+                storePassword System.getenv('ZEEKRBASS_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('ZEEKRBASS_KEY_ALIAS')
+                keyPassword System.getenv('ZEEKRBASS_KEY_PASSWORD')
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig keystorePath ? signingConfigs.ci : signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+}
