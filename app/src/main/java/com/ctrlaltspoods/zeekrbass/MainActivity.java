@@ -37,7 +37,6 @@ import android.widget.Toast;
 
 import java.util.EnumMap;
 import java.util.Map;
-import java.util.Properties;
 
 /** Settings / control screen. The common controls are also on the floating panel. */
 public class MainActivity extends Activity implements StatusBus.Listener {
@@ -49,11 +48,7 @@ public class MainActivity extends Activity implements StatusBus.Listener {
     private Switch eqAppsSwitch;
     private Switch eqLoudnessSwitch;
     private TextView eqStatusText;
-    private TextView rootOutput;
-    private TextView rootStatusText;
-    private TextView rootUpmixButton;
-    private boolean rootBusy;
-    private int meterTicks;
+
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Map<Mode, TextView> modeButtons = new EnumMap<>(Mode.class);
     private final Map<UpmixAlgorithm, TextView> algoButtons = new EnumMap<>(UpmixAlgorithm.class);
@@ -285,75 +280,41 @@ public class MainActivity extends Activity implements StatusBus.Listener {
                 + "prompt and come back after a restart:", 14, Ui.TEXT_DIM, false));
         col.addView(code("adb shell appops set " + getPackageName() + " PROJECT_MEDIA allow"));
 
-        // --- root
-        col.addView(section("Root (experimental)"));
-        col.addView(text("Uses root without changing any system files. Root upmix moves media audio "
-                + "from other apps into ZeekrBass and plays it back upmixed on ALL speakers, fronts "
-                + "included, with no doubling. Navigation, calls and alerts are never touched. "
-                + "If anything goes wrong, Android restores normal audio by itself.",
-                14, Ui.TEXT_DIM, false));
-        LinearLayout rootRow1 = hRow();
-        pillIn(rootRow1, "Check root", new View.OnClickListener() {
+        // --- effect lab
+        col.addView(section("Effect Lab (the car's own effects)"));
+        col.addView(text("Attaches the car's built-in sound processors to the whole-car output, the same "
+                + "way the global Bass EQ works, so you can hear what each one does. Try SUMX first "
+                + "with music playing. If it upmixes, you'll hear sound spread to the centre and rear "
+                + "speakers. Off always puts things back the way they were.", 14, Ui.TEXT_DIM, false));
+        TextView report = Ui.pill(this, "Audio report", 18);
+        report.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                runRoot("Checking root…", new RootTask() {
+                effectsText.setText("Reading Android's audio report…");
+                new Thread(new Runnable() {
                     @Override
-                    public String run() {
-                        return Root.check(MainActivity.this);
+                    public void run() {
+                        final String r = AudioReport.read(MainActivity.this);
+                        handler.post(new Runnable() {
+                            @Override
+                            public void run() {
+                                effectsText.setText(r);
+                            }
+                        });
                     }
-                });
+                }, "zeekrbass-report").start();
             }
         });
-        pillIn(rootRow1, "Grant permissions", new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                runRoot("Granting…", new RootTask() {
-                    @Override
-                    public String run() {
-                        return Root.grantPermissions(MainActivity.this);
-                    }
-                });
-            }
-        });
-        col.addView(rootRow1);
-        LinearLayout rootRow2 = hRow();
-        rootRow2.setPadding(0, Ui.dp(this, 12), 0, 0);
-        rootUpmixButton = pillIn(rootRow2, "Start root upmix", new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                toggleRootUpmix();
-            }
-        });
-        col.addView(rootRow2);
-        rootStatusText = text("", 14, Ui.TEXT, false);
-        col.addView(rootStatusText);
-        rootOutput = text("", 13, Ui.TEXT, false);
-        rootOutput.setTypeface(Typeface.MONOSPACE);
-        rootOutput.setTextIsSelectable(true);
-        col.addView(rootOutput);
-        col.addView(text("If su doesn't work from the app but ADB root does, start it from a computer "
-                + "(set Layout/Processing above first, then tap Start once so the settings file exists):",
-                14, Ui.TEXT_DIM, false));
-        col.addView(code(Root.adbCommand(this)));
-
-        // --- effects scan
-        col.addView(section("Audio effects on this car"));
-        col.addView(text("Lists the sound processors built into the car's Android system. If a Dolby, "
-                + "DTS or other surround effect shows up here, a future version could use it "
-                + "directly.", 14, Ui.TEXT_DIM, false));
-        TextView scan = Ui.pill(this, "Scan audio effects", 18);
-        scan.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                effectsText.setText(EffectsScanner.describe());
-            }
-        });
-        col.addView(scan, new LinearLayout.LayoutParams(
+        col.addView(report, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, Ui.dp(this, 60)));
+        col.addView(text("Shows each output's channel count and which effects are running. Needs one "
+                + "ADB command:", 14, Ui.TEXT_DIM, false));
+        col.addView(code("adb shell pm grant " + getPackageName() + " android.permission.DUMP"));
         effectsText = text("", 13, Ui.TEXT, false);
         effectsText.setTypeface(Typeface.MONOSPACE);
         effectsText.setTextIsSelectable(true);
         col.addView(effectsText);
+        for (EffectLab.Item item : EffectLab.get().items) col.addView(labRow(item));
 
         // --- about
         col.addView(section("About"));
@@ -502,8 +463,6 @@ public class MainActivity extends Activity implements StatusBus.Listener {
         });
         eqStatusText.setText(eq.enabled ? StatusBus.eqStatus : "Bass EQ off");
         eqStatusText.setTextColor(!eq.enabled || StatusBus.eqHealthy ? Ui.TEXT : Ui.WARN);
-        refreshRoot();
-
         bindSwitch(frontsSwitch, upmix.driveFronts, new CompoundButton.OnCheckedChangeListener() {
             @Override
             public void onCheckedChanged(CompoundButton b, boolean on) {
@@ -533,11 +492,6 @@ public class MainActivity extends Activity implements StatusBus.Listener {
     }
 
     private void updateMeter() {
-        if (++meterTicks % 4 == 0) refreshRoot();
-        updateUpmixMeter();
-    }
-
-    private void updateUpmixMeter() {
         boolean upmixing = StatusBus.serviceRunning && StatusBus.mode == Mode.UPMIX
                 && StatusBus.inputPeakDb > -119f;
         if (!upmixing) {
@@ -562,91 +516,69 @@ public class MainActivity extends Activity implements StatusBus.Listener {
         refresh();
     }
 
-    // ------------------------------------------------------------------ root
+    // ------------------------------------------------------------------ effect lab
 
-    private interface RootTask {
-        String run();
-    }
-
-    private void runRoot(String busyText, final RootTask task) {
-        if (rootBusy) return;
-        rootBusy = true;
-        rootOutput.setText(busyText);
-        new Thread(new Runnable() {
+    private View labRow(final EffectLab.Item item) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(0, Ui.dp(this, 18), 0, 0);
+        box.addView(text(item.title(), 17, Ui.TEXT, true));
+        final TextView state = text("", 14, Ui.TEXT_DIM, false);
+        final TextView settings = text("", 13, Ui.TEXT, false);
+        settings.setTypeface(Typeface.MONOSPACE);
+        settings.setTextIsSelectable(true);
+        final Runnable update = new Runnable() {
             @Override
             public void run() {
-                final String result = task.run();
-                handler.post(new Runnable() {
-                    @Override
-                    public void run() {
-                        rootBusy = false;
-                        rootOutput.setText(result);
-                        refresh();
-                    }
-                });
+                state.setText(item.state);
+                settings.setText(item.settings);
+                settings.setVisibility(item.settings.isEmpty() ? View.GONE : View.VISIBLE);
             }
-        }, "zeekrbass-root-ui").start();
-    }
-
-    private boolean rootHelperRunning() {
-        Properties st = Root.readStatus(this);
-        long updated = 0;
-        try {
-            updated = Long.parseLong(st.getProperty("updated", "0"));
-        } catch (NumberFormatException ignored) {
-        }
-        return "running".equals(st.getProperty("state"))
-                && System.currentTimeMillis() - updated < 5000;
-    }
-
-    private void toggleRootUpmix() {
-        if (prefs.rootUpmix() || rootHelperRunning()) {
-            Root.stopHelper(this);
-            runRoot("Stopping root upmix…", new RootTask() {
-                @Override
-                public String run() {
-                    try {
-                        Thread.sleep(2000);
-                    } catch (InterruptedException ignored) {
-                    }
-                    if (rootHelperRunning()) Root.killHelper();
-                    return "Root upmix stopped. Normal audio restored.";
+        };
+        LinearLayout row = hRow();
+        pillIn(row, "On", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                EffectLab.get().turnOn(item);
+                labChanged(update);
+            }
+        });
+        pillIn(row, "Off", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                EffectLab.get().turnOff(item);
+                labChanged(update);
+            }
+        });
+        pillIn(row, "Bypass", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (item.fx == null) {
+                    item.state = "Tap On first. Bypass switches off an effect the car already runs.";
+                } else {
+                    EffectLab.get().bypass(item, !item.bypassed);
                 }
-            });
-        } else {
-            runRoot("Starting root upmix…", new RootTask() {
-                @Override
-                public String run() {
-                    return Root.startHelper(MainActivity.this);
-                }
-            });
-        }
-        refresh();
+                labChanged(update);
+            }
+        });
+        pillIn(row, "Read settings", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                EffectLab.get().readSettings(item);
+                labChanged(update);
+            }
+        });
+        box.addView(row);
+        box.addView(state);
+        box.addView(settings);
+        update.run();
+        return box;
     }
 
-    private void refreshRoot() {
-        if (rootStatusText == null) return;
-        Properties st = Root.readStatus(this);
-        boolean running = rootHelperRunning();
-        String state = st.getProperty("state", "not started");
-        StringBuilder sb = new StringBuilder("Root upmix: ");
-        if (running) {
-            sb.append(st.getProperty("detail", "running"))
-                    .append(" · input ").append(st.getProperty("inputDb", "?")).append(" dB")
-                    .append(" · buffer ").append(st.getProperty("bufferMs", "?")).append(" ms");
-        } else if ("error".equals(state)) {
-            sb.append("error: ").append(st.getProperty("detail", "?"));
-        } else {
-            sb.append(prefs.rootUpmix() ? "starting…" : "off");
-        }
-        rootStatusText.setText(sb.toString());
-        rootStatusText.setTextColor("error".equals(state) && !running ? Ui.WARN : Ui.TEXT);
-        boolean on = prefs.rootUpmix() || running;
-        rootUpmixButton.setText(on ? "Stop root upmix" : "Start root upmix");
-        Ui.stylePill(rootUpmixButton, on, Ui.ACCENT_UPMIX);
-        if (!rootBusy && ("error".equals(state) || running)) {
-            String log = Root.tailLog(this, 1500);
-            if (!log.isEmpty()) rootOutput.setText("Helper log:\n" + log.trim());
+    private void labChanged(Runnable update) {
+        update.run();
+        if (EffectLab.get().anyAttached() || StatusBus.serviceRunning) {
+            ZeekrBassService.send(this, ZeekrBassService.intent(this, ZeekrBassService.ACTION_LAB_SYNC));
         }
     }
 

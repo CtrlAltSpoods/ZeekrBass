@@ -54,7 +54,6 @@ final class UpmixConfig {
     void save(Context c) {
         Prefs p = new Prefs(c);
         p.setUpmix(layout71, algorithm, centerDb, surroundDb, lfeDb, driveFronts);
-        if (p.rootUpmix()) Root.writeConfig(c, null); // keep the root helper in sync
     }
 
     int channels() {

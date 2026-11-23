@@ -46,6 +46,8 @@ public class ZeekrBassService extends Service
     static final String ACTION_UPMIX_LAYOUT_CHANGED = "com.ctrlaltspoods.zeekrbass.UPMIX_LAYOUT";
     static final String ACTION_PROJECTION_RESULT = "com.ctrlaltspoods.zeekrbass.PROJECTION_RESULT";
     static final String ACTION_EQ_SYNC = "com.ctrlaltspoods.zeekrbass.EQ_SYNC";
+    /** Effect Lab changed: keeps the service (and the effects it holds) alive, or lets it stop. */
+    static final String ACTION_LAB_SYNC = "com.ctrlaltspoods.zeekrbass.LAB_SYNC";
     static final String EXTRA_MODE = "mode";
     static final String EXTRA_ENABLED = "enabled";
     static final String EXTRA_RESULT_CODE = "result_code";
@@ -134,6 +136,9 @@ public class ZeekrBassService extends Service
             case ACTION_EQ_SYNC:
                 eq.sync();
                 break;
+            case ACTION_LAB_SYNC:
+                refreshUi();
+                break;
             case ACTION_QUIT:
                 applyMode(Mode.OFF);
                 setPanelVisible(false);
@@ -146,7 +151,6 @@ public class ZeekrBassService extends Service
                 applyMode(prefs.mode());
                 if (prefs.overlayVisible()) setPanelVisible(true);
                 eq.sync();
-                if (prefs.rootUpmix()) restartRootHelper();
                 break;
         }
         stopIfIdle();
@@ -156,6 +160,7 @@ public class ZeekrBassService extends Service
     @Override
     public void onDestroy() {
         eq.stop();
+        EffectLab.get().releaseAll();
         engine.release();
         releaseProjection();
         panel.hide();
@@ -207,26 +212,6 @@ public class ZeekrBassService extends Service
         StatusBus.eqStatus = status;
         StatusBus.eqHealthy = healthy;
         refreshUi();
-    }
-
-    private void restartRootHelper() {
-        final Context app = getApplicationContext();
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                java.util.Properties st = Root.readStatus(app);
-                long updated = 0;
-                try {
-                    updated = Long.parseLong(st.getProperty("updated", "0"));
-                } catch (NumberFormatException ignored) {
-                }
-                if ("running".equals(st.getProperty("state"))
-                        && System.currentTimeMillis() - updated < 5000) {
-                    return; // already running, don't interrupt it
-                }
-                Log.i(TAG, Root.startHelper(app));
-            }
-        }, "zeekrbass-root-start").start();
     }
 
     @Override
@@ -436,7 +421,7 @@ public class ZeekrBassService extends Service
 
     private void stopIfIdle() {
         if (currentMode == Mode.OFF && engine.mode() == Mode.OFF && !panel.isShown()
-                && !eqConfig.enabled) {
+                && !eqConfig.enabled && !EffectLab.get().anyAttached()) {
             inForeground = false;
             stopForeground(STOP_FOREGROUND_REMOVE);
             stopSelf();

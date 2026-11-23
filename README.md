@@ -68,7 +68,7 @@ other apps are playing, and plays it back spread across the centre, surround and
 
 ### Results so far
 
-The capture-based Upmix didn't work in the car, so v0.3 adds two other routes.
+The capture-based Upmix didn't work in the car. v0.3 added Bass EQ, and v0.4 adds Effect Lab.
 
 ## Bass EQ (v0.3, experimental)
 
@@ -88,31 +88,24 @@ do it. No capture and no added delay. It can run together with Silent 5.1.
 - A limiter stops the boost from clipping.
 - There's a **Bass EQ** button on the floating panel.
 
-## Root tools (v0.3, experimental)
+## Effect Lab (v0.4, experimental)
 
-For head units with root. **No system files are changed.**
+The car's Android system includes its own sound processors, including several from Qualcomm:
+**SUMX**, **AVC**, **Bass-Mid-Treble** and **Fade-n-Balance**. Effect Lab attaches each one to the
+whole-car output, the same way the global Bass EQ does, so you can hear what it does:
 
-- **Check root**: reports the build type, SELinux mode, and whether `su` works for the app.
-- **Grant permissions**: gives ZeekrBass its permissions (overlay, audio, capture consent, DUMP),
-  so no ADB is needed.
-- **Root upmix**: starts a small helper process as root (`app_process`, in memory only). It:
-  1. opens a 5.1/7.1 output,
-  2. asks Android to route **media** audio from every other app to the helper instead of the
-     speakers (an audio routing policy, the mechanism car audio systems themselves use),
-  3. upmixes it with the Cinema / Music / Manual settings and plays it on **all** speakers,
-     fronts included, so there's no doubling and no echo.
+- **On / Off**: attach and enable, or detach. Off always restores things exactly as they were.
+- **Bypass**: if the car already runs that effect, switches it off temporarily (only if Android
+  gives ZeekrBass control of it).
+- **Read settings**: reads (never writes) the effect's first 16 parameters.
+- **Audio report**: Android's own report of each output's channel count and the effects running
+  on it. Needs `adb shell pm grant com.ctrlaltspoods.zeekrbass android.permission.DUMP` once.
 
-  Only media audio is touched: navigation, calls, chimes and alerts are never routed. If the
-  helper stops or crashes, Android removes its routing automatically and normal audio comes
-  straight back. Its status and log show on the main screen.
-
-  If `su` doesn't work from the app but root works over ADB, the main screen shows the ADB command
-  to start the helper from a computer.
-
-Root is used only for things that disappear on reboot. Installing a native effect library into
-the car's system partition (how ViPER4Android-style mods work) is deliberately **not** done. The
-head unit also runs things like cameras and climate controls, and a bad system change could stop
-it booting.
+Why this matters for upmixing: Android's standard effects (like the one Bass EQ uses) process
+each speaker channel separately. They can boost or cut, but can't copy sound from the left and
+right channels into the centre and rears, so they can't upmix. A vendor effect *can* move sound
+between channels. SUMX is the most likely candidate, but it's undocumented, so Effect Lab is how
+we find out.
 
 ### About Dolby and DTS
 
@@ -191,11 +184,12 @@ adjust the centre / surround / sub levels to taste.
 | Silent 7.1 | Not yet tested |
 | With dither | Not yet tested |
 | Upmix (capture): works on the 7X | ❌ Didn't work |
-| Bass EQ: global (session 0) accepted | Not yet tested |
-| Bass EQ: music apps detected | Not yet tested |
+| Bass EQ: global (whole car) | ✅ Works |
+| Bass EQ: music apps detected | ❌ No apps announced their audio |
 | Bass EQ: loudness follows volume | Not yet tested |
-| Root: su works for the app | Not yet tested |
-| Root upmix | Not yet tested |
+| Root | ❌ Not available to apps on this car (removed in v0.4) |
+| Effect Lab: SUMX | Not yet tested |
+| Effect Lab: audio report (output channel count) | Not yet tested |
 | Upmix: Cinema / Music / Manual | Not yet tested |
 | Upmix: which music apps can be captured | Not yet tested |
 

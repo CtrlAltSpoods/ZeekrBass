@@ -29,8 +29,7 @@ public class BootReceiver extends BroadcastReceiver {
         }
         Prefs prefs = new Prefs(context);
         if (!prefs.restoreOnBoot()) return;
-        if (prefs.mode() == Mode.OFF && !prefs.overlayVisible() && !EqConfig.get(context).enabled
-                && !prefs.rootUpmix()) {
+        if (prefs.mode() == Mode.OFF && !prefs.overlayVisible() && !EqConfig.get(context).enabled) {
             return;
         }
         try {

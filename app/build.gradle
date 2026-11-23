@@ -20,8 +20,8 @@ android {
         // Kept at 34 on purpose: Android 15 (target 35) blocks media-playback services
         // from starting at boot, which would break "restore after restart".
         targetSdk 34
-        versionCode 3
-        versionName '0.3.0-test'
+        versionCode 4
+        versionName '0.4.0-test'
     }
 
     signingConfigs {

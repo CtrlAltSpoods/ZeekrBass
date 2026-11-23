@@ -101,14 +101,6 @@ final class Prefs {
         return sp.getBoolean("upmix_fronts", false);
     }
 
-    boolean rootUpmix() {
-        return sp.getBoolean("root_upmix", false);
-    }
-
-    void setRootUpmix(boolean on) {
-        sp.edit().putBoolean("root_upmix", on).apply();
-    }
-
     void setUpmix(boolean layout71, UpmixAlgorithm algo, int centerDb, int surroundDb, int lfeDb,
                   boolean fronts) {
         sp.edit()

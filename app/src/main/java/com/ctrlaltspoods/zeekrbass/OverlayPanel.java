@@ -141,7 +141,7 @@ final class OverlayPanel {
         }
         layoutButton.setText("Layout " + upmix.layoutLabel());
         Ui.stylePill(layoutButton, false, Ui.ACCENT_UPMIX);
-        upmixRow.setVisibility(mode == Mode.UPMIX || prefs.rootUpmix() ? View.VISIBLE : View.GONE);
+        upmixRow.setVisibility(mode == Mode.UPMIX ? View.VISIBLE : View.GONE);
         dot.setBackground(Ui.dot(Ui.statusColor(mode, StatusBus.healthy)));
         compactLabel.setText(mode == Mode.OFF ? "Off"
                 : mode == Mode.UPMIX ? upmix.algorithm.label + " " + upmix.layoutLabel() : mode.label);
