@@ -33,7 +33,8 @@ import java.util.Map;
 /**
  * Floating, draggable control panel drawn over other apps.
  *
- * [⠿] ● [5.1] [7.1] [Off] [Dither]
+ * [⠿] ● [5.1] [7.1] [Upmix] [Off] [Dither]
+ *         [Cinema] [Music] [Manual] [Layout 5.1]     ← second row, only in Upmix mode
  *
  * Drag the ⠿ handle to move it; tap the handle to collapse it down to "⠿ ● 5.1".
  */
@@ -42,6 +43,10 @@ final class OverlayPanel {
         void onModeSelected(Mode mode);
 
         void onDitherToggled();
+
+        void onAlgorithmSelected(UpmixAlgorithm algorithm);
+
+        void onLayoutToggled();
     }
 
     private static final String TAG = "ZeekrBass";
@@ -49,21 +54,26 @@ final class OverlayPanel {
     private final Context ctx;
     private final WindowManager wm;
     private final Prefs prefs;
+    private final UpmixConfig upmix;
     private final Actions actions;
     private final Map<Mode, TextView> modeButtons = new EnumMap<>(Mode.class);
+    private final Map<UpmixAlgorithm, TextView> algoButtons = new EnumMap<>(UpmixAlgorithm.class);
 
     private LinearLayout root;
     private LinearLayout controls;
     private TextView compactLabel;
     private TextView ditherButton;
+    private TextView layoutButton;
+    private LinearLayout upmixRow;
     private View dot;
     private WindowManager.LayoutParams lp;
     private boolean shown;
 
-    OverlayPanel(Context ctx, Prefs prefs, Actions actions) {
+    OverlayPanel(Context ctx, Prefs prefs, UpmixConfig upmix, Actions actions) {
         this.ctx = ctx;
         this.wm = (WindowManager) ctx.getSystemService(Context.WINDOW_SERVICE);
         this.prefs = prefs;
+        this.upmix = upmix;
         this.actions = actions;
     }
 
@@ -122,8 +132,24 @@ final class OverlayPanel {
             Ui.stylePill(e.getValue(), e.getKey() == mode, Ui.ACCENT);
         }
         Ui.stylePill(ditherButton, StatusBus.dither, Ui.ACCENT_DITHER);
+        for (Map.Entry<UpmixAlgorithm, TextView> e : algoButtons.entrySet()) {
+            Ui.stylePill(e.getValue(), e.getKey() == upmix.algorithm, Ui.ACCENT_UPMIX);
+        }
+        layoutButton.setText("Layout " + upmix.layoutLabel());
+        Ui.stylePill(layoutButton, false, Ui.ACCENT_UPMIX);
+        upmixRow.setVisibility(mode == Mode.UPMIX ? View.VISIBLE : View.GONE);
         dot.setBackground(Ui.dot(Ui.statusColor(mode, StatusBus.healthy)));
-        compactLabel.setText(mode == Mode.OFF ? "Off" : mode.label);
+        compactLabel.setText(mode == Mode.OFF ? "Off"
+                : mode == Mode.UPMIX ? upmix.algorithm.label + " " + upmix.layoutLabel() : mode.label);
+        if (shown) {
+            root.post(new Runnable() {
+                @Override
+                public void run() {
+                    clampToScreen();
+                    updateLayout();
+                }
+            });
+        }
     }
 
     private void build() {
@@ -159,9 +185,11 @@ final class OverlayPanel {
                 LinearLayout.LayoutParams.WRAP_CONTENT, Ui.dp(ctx, 56)));
 
         controls = new LinearLayout(ctx);
-        controls.setOrientation(LinearLayout.HORIZONTAL);
-        controls.setGravity(Gravity.CENTER_VERTICAL);
-        for (final Mode m : new Mode[]{Mode.SURROUND_51, Mode.SURROUND_71, Mode.OFF}) {
+        controls.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout modeRow = new LinearLayout(ctx);
+        modeRow.setOrientation(LinearLayout.HORIZONTAL);
+        modeRow.setGravity(Gravity.CENTER_VERTICAL);
+        for (final Mode m : new Mode[]{Mode.SURROUND_51, Mode.SURROUND_71, Mode.UPMIX, Mode.OFF}) {
             TextView b = Ui.pill(ctx, m.label, 18);
             b.setOnClickListener(new View.OnClickListener() {
                 @Override
@@ -169,7 +197,7 @@ final class OverlayPanel {
                     actions.onModeSelected(m);
                 }
             });
-            controls.addView(b, buttonLp());
+            modeRow.addView(b, buttonLp());
             modeButtons.put(m, b);
         }
         ditherButton = Ui.pill(ctx, "Dither", 14);
@@ -181,7 +209,35 @@ final class OverlayPanel {
         });
         LinearLayout.LayoutParams ditherLp = buttonLp();
         ditherLp.setMargins(Ui.dp(ctx, 12), 0, Ui.dp(ctx, 4), 0);
-        controls.addView(ditherButton, ditherLp);
+        modeRow.addView(ditherButton, ditherLp);
+        controls.addView(modeRow);
+
+        upmixRow = new LinearLayout(ctx);
+        upmixRow.setOrientation(LinearLayout.HORIZONTAL);
+        upmixRow.setGravity(Gravity.CENTER_VERTICAL);
+        upmixRow.setPadding(0, Ui.dp(ctx, 8), 0, 0);
+        for (final UpmixAlgorithm a : UpmixAlgorithm.values()) {
+            TextView b = Ui.pill(ctx, a.label, 16);
+            b.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    actions.onAlgorithmSelected(a);
+                }
+            });
+            upmixRow.addView(b, buttonLp());
+            algoButtons.put(a, b);
+        }
+        layoutButton = Ui.pill(ctx, "Layout 5.1", 14);
+        layoutButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                actions.onLayoutToggled();
+            }
+        });
+        LinearLayout.LayoutParams layoutLp = buttonLp();
+        layoutLp.setMargins(Ui.dp(ctx, 12), 0, Ui.dp(ctx, 4), 0);
+        upmixRow.addView(layoutButton, layoutLp);
+        controls.addView(upmixRow);
         root.addView(controls);
 
         DragListener drag = new DragListener();

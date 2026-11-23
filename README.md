@@ -19,6 +19,9 @@ everything else: Spotify, radio, podcasts and so on.
 
 **This is a theory under test. It's not a confirmed fix.** Results so far are in [Testing status](#testing-status).
 
+First result: silent 5.1 *does* change the sound. But stereo music still only plays on the front
+speakers, because a stereo song has only two channels. That's what **Upmix** (v0.2) is for.
+
 ## What the app does
 
 - Plays an endless silent PCM stream: **5.1** (6 ch) or **7.1** (8 ch), 16-bit / 48 kHz,
@@ -33,6 +36,58 @@ everything else: Spotify, radio, podcasts and so on.
 - **Dither** (optional): sends inaudible ±1-bit noise (about −96 dBFS) instead of pure digital zeros,
   in case the DSP ignores channels that are completely silent.
 - Optionally restores the last mode and the panel after the car restarts.
+
+## Upmix (v0.2, experimental)
+
+Upmix works like the surround modes on a home-theatre receiver. It captures the stereo audio
+other apps are playing, and plays it back spread across the centre, surround and sub channels as a
+5.1 or 7.1 stream.
+
+```
+   music app (stereo) ──────────────────────────────► front L / R   (untouched, as before)
+         │
+         └─ captured by ZeekrBass ─► upmixer ─► centre · surrounds · (7.1 rears) · sub < 80 Hz
+```
+
+- **The music app keeps playing on the front speakers as normal.** ZeekrBass adds the other
+  channels. A sideloaded app can't silence another app's audio, so doing it this way avoids doubling
+  the fronts. There's an option to send to the fronts too, for testing only.
+- **Sub:** 4th-order (Linkwitz-Riley) low-pass at **80 Hz** of the mono sum. **No high-pass on any
+  speaker.** The mains stay full range, so the car's own 5.1 tuning is untouched.
+- **Processing modes:**
+  - **Cinema**: fixed matrix decode, in the style of classic cinema surround processors. The
+    surrounds bring out width and room sound, softened above 7 kHz. In 7.1, the rear pair gets
+    a 12 ms delayed copy for depth.
+  - **Music**: steered upmix. It tracks the mix in real time, keeps centred vocals in the centre
+    speaker, and sends wide or ambient sound to the surrounds without leaking hard-panned sounds
+    to the other side.
+  - **Manual**: plain split, no processing. Centre = L+R, left surrounds = L, right surrounds = R,
+    sub = everything below 80 Hz.
+- Centre, surround and sub levels are adjustable live (−30 dB/off … +6 dB, sub up to +12 dB).
+- In Upmix mode, the floating panel shows a second row: `[Cinema] [Music] [Manual] [Layout 5.1]`.
+
+### About Dolby and DTS
+
+Real Dolby Pro Logic / Dolby Surround and DTS Neo:X are licensed, closed technology. A sideloaded
+app can't legally ship them. The three modes above are ZeekrBass's own open algorithms, based on the
+same general ideas (matrix decoding and steering). They are **not** Dolby or DTS.
+
+If the car's Android system happens to include a licensed Dolby/DTS effect, **Scan audio effects** on
+the main screen will list it, and a future version could try to use it.
+
+### Known limits
+
+- **Only apps that allow audio capture can be upmixed.** Most third-party apps allow it by default.
+  Some block it, and built-in system apps (often including FM/DAB radio and Bluetooth audio) usually
+  can't be captured. CarPlay / Android Auto audio isn't captured either. If nothing is captured, the
+  status line says so after a few seconds.
+- **There's a small delay** (usually tens of milliseconds) between the native front speakers and the
+  added channels. It's harmless for surrounds, but if the centre or sub sounds smeared, lower them.
+- **Android asks for capture permission** each time Upmix starts (its "start recording/casting"
+  dialog). If Android offers a choice, pick *entire screen*. Run
+  `adb shell appops set com.ctrlaltspoods.zeekrbass PROJECT_MEDIA allow` once to skip the prompt.
+  That also lets Upmix restart on its own after the car reboots.
+- Needs Android 10 or newer.
 
 ## Download
 
@@ -58,6 +113,11 @@ adb install -r ZeekrBass.apk
    adb shell appops set com.ctrlaltspoods.zeekrbass SYSTEM_ALERT_WINDOW allow
    ```
 3. Tap **Show floating panel**, then choose 5.1 or 7.1.
+4. For **Upmix**, also allow audio capture. If the car has no permission screens, run:
+   ```
+   adb shell pm grant com.ctrlaltspoods.zeekrbass android.permission.RECORD_AUDIO
+   adb shell appops set com.ctrlaltspoods.zeekrbass PROJECT_MEDIA allow
+   ```
 
 ## How to test
 
@@ -71,13 +131,20 @@ Use one bass-heavy track at the volume level where the bass normally drops out:
 The main screen shows where Android routed the stream (`→ device name`). That's useful to note if
 the results differ between modes.
 
+For **Upmix**: start some music, pick Upmix, and check that the **Input** meter on the main screen
+moves. If it stays flat, that app's audio can't be captured. Then try Cinema, Music and Manual, and
+adjust the centre / surround / sub levels to taste.
+
 ## Testing status
 
 | Test | Result |
 | --- | --- |
-| Silent 5.1 | Not yet tested |
+| Silent 5.1 | ✅ Changes the sound / bass, but stereo music only plays on the front speakers |
 | Silent 7.1 | Not yet tested |
 | With dither | Not yet tested |
+| Upmix: capture works on the 7X | Not yet tested |
+| Upmix: Cinema / Music / Manual | Not yet tested |
+| Upmix: which music apps can be captured | Not yet tested |
 
 ## Troubleshooting
 

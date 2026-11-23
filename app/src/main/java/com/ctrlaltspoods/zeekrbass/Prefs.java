@@ -76,4 +76,40 @@ final class Prefs {
     void setOverlayPosition(int x, int y) {
         sp.edit().putInt("overlay_x", x).putInt("overlay_y", y).apply();
     }
+
+    boolean upmixLayout71() {
+        return sp.getBoolean("upmix_71", false);
+    }
+
+    UpmixAlgorithm upmixAlgorithm() {
+        return UpmixAlgorithm.fromName(sp.getString("upmix_algo", UpmixAlgorithm.MUSIC.name()));
+    }
+
+    int centerDb() {
+        return sp.getInt("upmix_center_db", -3);
+    }
+
+    int surroundDb() {
+        return sp.getInt("upmix_surround_db", -3);
+    }
+
+    int lfeDb() {
+        return sp.getInt("upmix_lfe_db", 0);
+    }
+
+    boolean driveFronts() {
+        return sp.getBoolean("upmix_fronts", false);
+    }
+
+    void setUpmix(boolean layout71, UpmixAlgorithm algo, int centerDb, int surroundDb, int lfeDb,
+                  boolean fronts) {
+        sp.edit()
+                .putBoolean("upmix_71", layout71)
+                .putString("upmix_algo", algo.name())
+                .putInt("upmix_center_db", centerDb)
+                .putInt("upmix_surround_db", surroundDb)
+                .putInt("upmix_lfe_db", lfeDb)
+                .putBoolean("upmix_fronts", fronts)
+                .apply();
+    }
 }

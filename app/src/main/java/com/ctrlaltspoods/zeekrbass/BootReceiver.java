@@ -31,8 +31,8 @@ public class BootReceiver extends BroadcastReceiver {
         if (!prefs.restoreOnBoot()) return;
         if (prefs.mode() == Mode.OFF && !prefs.overlayVisible()) return;
         try {
-            SilentStreamService.send(context,
-                    SilentStreamService.intent(context, SilentStreamService.ACTION_RESTORE));
+            ZeekrBassService.send(context,
+                    ZeekrBassService.intent(context, ZeekrBassService.ACTION_RESTORE));
         } catch (RuntimeException e) {
             Log.w("ZeekrBass", "Could not restore after " + action, e);
         }

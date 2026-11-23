@@ -8,11 +8,17 @@
 
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <!-- Needed by Android for any audio capture. Upmix only captures other apps' playback;
+         it never opens the microphone. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application
+        android:allowAudioPlaybackCapture="false"
         android:allowBackup="false"
         android:icon="@drawable/ic_launcher"
         android:label="@string/app_name"
@@ -33,10 +39,18 @@
                 android:value="true" />
         </activity>
 
-        <service
-            android:name=".SilentStreamService"
+        <activity
+            android:name=".ProjectionActivity"
+            android:excludeFromRecents="true"
             android:exported="false"
-            android:foregroundServiceType="mediaPlayback" />
+            android:noHistory="false"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <service
+            android:name=".ZeekrBassService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback|mediaProjection|microphone" />
 
         <receiver
             android:name=".BootReceiver"

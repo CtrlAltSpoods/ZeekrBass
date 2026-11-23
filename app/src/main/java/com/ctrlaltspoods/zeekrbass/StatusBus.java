@@ -36,6 +36,9 @@ final class StatusBus {
     static volatile boolean healthy = true;
     static volatile boolean dither;
     static volatile boolean overlayShown;
+    /** Upmix meters, updated a few times a second by the audio thread (not via publish()). */
+    static volatile float inputPeakDb = -120f;
+    static volatile int bufferedMs;
 
     private StatusBus() {
     }

@@ -14,11 +14,13 @@ package com.ctrlaltspoods.zeekrbass;
 
 import android.media.AudioFormat;
 
-/** The three workaround states offered by the control panel. */
+/** Workaround states: off, a silent 5.1/7.1 keep-alive stream, or the live upmixer. */
 enum Mode {
     OFF(0, "Off"),
     SURROUND_51(6, "5.1"),
-    SURROUND_71(8, "7.1");
+    SURROUND_71(8, "7.1"),
+    /** Captures other apps' stereo audio and re-plays it spread over 5.1 / 7.1 (see UpmixConfig). */
+    UPMIX(0, "Upmix");
 
     final int channels;
     final String label;
